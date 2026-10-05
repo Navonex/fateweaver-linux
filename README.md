@@ -32,6 +32,14 @@ makepkg -si
 
 Der erste Build dauert 10 bis 15 Minuten.
 
+## Extras gegenüber dem Original
+
+- **Overlay nur, wenn es gebraucht wird:** Der Meter erscheint, sobald du kämpfst, und bleibt nach Kampfende noch 15 Sekunden. Bei einem Hinweis (Timer, Feldboss) bleibt er 20 Sekunden. Sonst ist er unsichtbar, und Klicks gehen durch aufs Spiel. Timer und Hinweise laufen im Hintergrund weiter.
+- **Menü-Knopf oben links** auf dem Monitor des Meters, mit drei Einträgen: Meter immer anzeigen oder automatisch, Timer & Hinweise, Meter-Einstellungen.
+- **Einstellungen > Overlay:** Automatik ein/aus, Nachlaufzeit (5 bis 120 Sekunden), Menü-Knopf ein/aus.
+
+Der Code dafür steckt in `0001-overlay-autohide-corner-menu.patch` und wird beim Bauen eingespielt.
+
 ## Optional: KDE Plasma
 
 ```bash

@@ -1,0 +1,425 @@
+diff --git a/index.html b/index.html
+index f90c35e..13c5081 100644
+--- a/index.html
++++ b/index.html
+@@ -468,6 +468,43 @@
+                 </div>
+               </div>
+             </section>
++            <section class="settingsGroup fwOverlaySettings">
++              <div class="settingsMiniTitle">Overlay</div>
++              <div class="settingsGroupBody">
++                <div class="settingsRow">
++                  <div class="settingsInfo">
++                    <div class="settingsLabel">Nur im Kampf und bei Hinweisen anzeigen</div>
++                    <div class="settingsHint">Sonst unsichtbar, Klicks gehen durch aufs Spiel.</div>
++                  </div>
++                  <label class="settingsToggle settingsToggleInline">
++                    <span class="settingsToggleControl">
++                      <input type="checkbox" class="fwAutohideCheckbox" />
++                      <span class="settingsToggleTrack" aria-hidden="true"></span>
++                    </span>
++                  </label>
++                </div>
++                <div class="settingsRow settingsRowInput">
++                  <div class="settingsInfo">
++                    <div class="settingsLabel">Nach Kampfende sichtbar</div>
++                  </div>
++                  <div class="settingsRangeInline">
++                    <input type="range" class="fwLingerInput" min="5" max="120" step="5" />
++                    <div class="settingsValue fwLingerValue">15 s</div>
++                  </div>
++                </div>
++                <div class="settingsRow">
++                  <div class="settingsInfo">
++                    <div class="settingsLabel">Men&uuml;-Knopf oben links</div>
++                  </div>
++                  <label class="settingsToggle settingsToggleInline">
++                    <span class="settingsToggleControl">
++                      <input type="checkbox" class="fwCornerCheckbox" />
++                      <span class="settingsToggleTrack" aria-hidden="true"></span>
++                    </span>
++                  </label>
++                </div>
++              </div>
++            </section>
+             <div class="settingsColumns">
+               <section class="settingsGroup settingsColumn">
+                 <div class="settingsMiniTitle" data-i18n="settings.appearance">Appearance</div>
+@@ -1131,5 +1168,7 @@
+ <script src="/fw/notices.js"></script>
+ <script src="/fw/updates.js"></script>
+ <script src="/fw/meter.js"></script>
++<script src="/fw/overlay-settings.js"></script>
++<script src="/fw/autohide.js"></script>
+ </body>
+ </html>
+diff --git a/public/corner.html b/public/corner.html
+new file mode 100644
+index 0000000..dcfdfd9
+--- /dev/null
++++ b/public/corner.html
+@@ -0,0 +1,19 @@
++<!doctype html>
++<html lang="de">
++<head>
++  <meta charset="utf-8" />
++  <title>Fateweaver menu</title>
++  <link rel="stylesheet" href="/fw/corner.css" />
++</head>
++<body>
++  <button id="btn" title="Fateweaver">
++    <img src="/fw/logo.svg" alt="" />
++  </button>
++  <div id="menu" hidden>
++    <button class="item" id="pin"></button>
++    <button class="item" id="hub">Timer &amp; Hinweise</button>
++    <button class="item" id="settings">Meter-Einstellungen</button>
++  </div>
++  <script src="/fw/corner.js"></script>
++</body>
++</html>
+diff --git a/public/fw/autohide.js b/public/fw/autohide.js
+new file mode 100644
+index 0000000..de838e1
+--- /dev/null
++++ b/public/fw/autohide.js
+@@ -0,0 +1,64 @@
++/* Fateweaver (Linux build): the meter shows only while you fight, for a while after the fight,
++   and while an alert is up. Otherwise it fades out and lets clicks through to the game. The corner
++   menu (corner.html) can pin it shown; Settings > Overlay turns all of this on or off. The page
++   keeps running while hidden, so timers and alerts still fire. */
++(() => {
++  if (window.A2_VIEW !== "main") return; // settings/details/history share this bundle
++
++  const ALERT_MS = 20e3; // as long as a toast stays up (toast.js)
++  const PIN_KEY = "fw.autohidePinned";
++  const invoke = (cmd, args) => window.__TAURI__?.core?.invoke(cmd, args).catch(() => {});
++
++  const style = document.createElement("style");
++  style.textContent = `
++    body { transition: opacity .35s ease; }
++    html.fwAutoHidden body { opacity: 0; pointer-events: none; }
++  `;
++  document.head.appendChild(style);
++
++  const cfg = window.FW_OVERLAY_CFG.read();
++  let pinned = localStorage.getItem(PIN_KEY) === "1";
++  let showUntil = 0;
++  let wasFighting = false;
++  let hidden = null;
++
++  const fighting = () => document.querySelector(".battleTime")?.classList.contains("state-fighting") ?? false;
++
++  const apply = () => {
++    const now = Date.now();
++    const f = fighting();
++    if (f || wasFighting) showUntil = Math.max(showUntil, now + cfg.lingerSec * 1e3);
++    wasFighting = f;
++    const next = cfg.autohide && !(pinned || f || now < showUntil);
++    if (next === hidden) return;
++    hidden = next;
++    document.documentElement.classList.toggle("fwAutoHidden", hidden);
++    invoke("fw_set_autohidden", { hidden });
++  };
++
++  const corner = () => invoke(cfg.corner ? "fw_open_corner" : "fw_close_corner");
++
++  // Every alert goes through the notification bucket (alerts.js calls FW.notifs.push).
++  const N = window.FW?.notifs;
++  if (N?.push) {
++    const push = N.push;
++    N.push = (...a) => { showUntil = Math.max(showUntil, Date.now() + ALERT_MS); apply(); return push(...a); };
++  }
++
++  window.__fwSetPinned = (p) => {
++    pinned = !!p;
++    localStorage.setItem(PIN_KEY, pinned ? "1" : "0");
++    apply();
++  };
++  window.__fwOverlaySettings = (next) => {
++    Object.assign(cfg, window.FW_OVERLAY_CFG.write(next));
++    apply();
++    corner();
++  };
++
++  document.addEventListener("DOMContentLoaded", () => {
++    apply();
++    setInterval(apply, 500);
++    setTimeout(corner, 1500); // the corner window is placed on the meter's monitor
++  });
++})();
+diff --git a/public/fw/corner.css b/public/fw/corner.css
+new file mode 100644
+index 0000000..e77f7a0
+--- /dev/null
++++ b/public/fw/corner.css
+@@ -0,0 +1,45 @@
++html, body {
++  margin: 0;
++  background: transparent;
++  overflow: hidden;
++  font: 13px/1.2 system-ui, sans-serif;
++  user-select: none;
++}
++#btn {
++  width: 30px;
++  height: 30px;
++  margin: 2px;
++  padding: 4px;
++  border: 1px solid rgba(255, 255, 255, .18);
++  border-radius: 8px;
++  background: rgba(16, 18, 28, .55);
++  cursor: pointer;
++  opacity: .55;
++  transition: opacity .15s ease, background .15s ease;
++}
++#btn:hover, body.open #btn { opacity: 1; background: rgba(16, 18, 28, .9); }
++#btn img { width: 100%; height: 100%; display: block; }
++#menu {
++  position: absolute;
++  top: 36px;
++  left: 2px;
++  width: 196px;
++  padding: 4px;
++  border: 1px solid rgba(255, 255, 255, .18);
++  border-radius: 10px;
++  background: rgba(16, 18, 28, .94);
++  box-sizing: border-box;
++}
++.item {
++  display: block;
++  width: 100%;
++  padding: 8px 10px;
++  border: 0;
++  border-radius: 6px;
++  background: transparent;
++  color: #e8e9f0;
++  font: inherit;
++  text-align: left;
++  cursor: pointer;
++}
++.item:hover { background: rgba(255, 255, 255, .1); }
+diff --git a/public/fw/corner.js b/public/fw/corner.js
+new file mode 100644
+index 0000000..2b4565d
+--- /dev/null
++++ b/public/fw/corner.js
+@@ -0,0 +1,29 @@
++/* Fateweaver (Linux build): corner button and its menu. The window is only as big as what is
++   shown, so the rest of the screen corner stays clickable for the game. */
++(() => {
++  const PIN_KEY = "fw.autohidePinned";
++  const invoke = (cmd, args) => window.__TAURI__?.core?.invoke(cmd, args).catch(() => {});
++  const btn = document.getElementById("btn"), menu = document.getElementById("menu"), pin = document.getElementById("pin");
++  const pinned = () => localStorage.getItem(PIN_KEY) === "1";
++
++  const label = () => { pin.textContent = pinned() ? "Meter: automatisch ein-/ausblenden" : "Meter: immer anzeigen"; };
++  const open = (on) => {
++    menu.hidden = !on;
++    document.body.classList.toggle("open", on);
++    if (on) label();
++    invoke("fw_corner_size", on ? { width: 200, height: 36 + menu.offsetHeight + 4 } : { width: 34, height: 34 });
++  };
++  const close = () => open(false);
++
++  btn.addEventListener("click", () => open(menu.hidden));
++  pin.addEventListener("click", () => {
++    const next = !pinned();
++    localStorage.setItem(PIN_KEY, next ? "1" : "0");
++    invoke("fw_set_pinned", { pinned: next });
++    close();
++  });
++  document.getElementById("hub").addEventListener("click", () => { invoke("open_hub_window"); close(); });
++  document.getElementById("settings").addEventListener("click", () => { invoke("open_settings_window"); close(); });
++  window.addEventListener("blur", close);
++  document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
++})();
+diff --git a/public/fw/overlay-settings.js b/public/fw/overlay-settings.js
+new file mode 100644
+index 0000000..9decebf
+--- /dev/null
++++ b/public/fw/overlay-settings.js
+@@ -0,0 +1,37 @@
++/* Fateweaver (Linux build): Settings > Overlay. Stores the options and hands them to the meter
++   window, which applies them right away (autohide.js). */
++(() => {
++  const KEY = "fw.overlay";
++  const DEF = { autohide: true, lingerSec: 15, corner: true };
++  const clamp = (v) => Math.min(120, Math.max(5, Math.round(Number(v) / 5) * 5 || DEF.lingerSec));
++  const read = () => {
++    try { const c = { ...DEF, ...JSON.parse(localStorage.getItem(KEY) || "{}") }; c.lingerSec = clamp(c.lingerSec); return c; }
++    catch { return { ...DEF }; }
++  };
++  const write = (c) => { const v = { ...read(), ...c }; v.lingerSec = clamp(v.lingerSec); localStorage.setItem(KEY, JSON.stringify(v)); return v; };
++  window.FW_OVERLAY_CFG = { read, write };
++})();
++
++document.addEventListener("DOMContentLoaded", () => {
++  const auto = document.querySelector(".fwAutohideCheckbox");
++  const linger = document.querySelector(".fwLingerInput");
++  const lingerVal = document.querySelector(".fwLingerValue");
++  const corner = document.querySelector(".fwCornerCheckbox");
++  if (!auto || !linger || !corner) return;
++
++  const c = window.FW_OVERLAY_CFG.read();
++  auto.checked = c.autohide;
++  linger.value = c.lingerSec;
++  lingerVal.textContent = `${c.lingerSec} s`;
++  corner.checked = c.corner;
++
++  const send = () => {
++    const v = window.FW_OVERLAY_CFG.write({ autohide: auto.checked, lingerSec: linger.value, corner: corner.checked });
++    lingerVal.textContent = `${v.lingerSec} s`;
++    window.__TAURI__?.core?.invoke("fw_overlay_settings", { autohide: v.autohide, lingerSec: v.lingerSec, corner: v.corner }).catch(() => {});
++  };
++  auto.addEventListener("change", send);
++  corner.addEventListener("change", send);
++  linger.addEventListener("input", () => { lingerVal.textContent = `${linger.value} s`; });
++  linger.addEventListener("change", send);
++});
+diff --git a/src-tauri/capabilities/default.json b/src-tauri/capabilities/default.json
+index a34dee7..8fa78cf 100644
+--- a/src-tauri/capabilities/default.json
++++ b/src-tauri/capabilities/default.json
+@@ -9,7 +9,8 @@
+     "details-*",
+     "history",
+     "hub",
+-    "fwtoast-*"
++    "fwtoast-*",
++    "fwcorner"
+   ],
+   "permissions": [
+     "core:default",
+diff --git a/src-tauri/src/app.rs b/src-tauri/src/app.rs
+index 755780e..fa648ac 100644
+--- a/src-tauri/src/app.rs
++++ b/src-tauri/src/app.rs
+@@ -100,6 +100,9 @@ pub struct OverlayLock {
+     /// goes through `sync_click_through` under this lock, so a late pointer
+     /// check can never leave an unlocked window click-through.
+     applied: Mutex<Option<bool>>,
++    /// Fateweaver (Linux): the meter is auto-hidden (no fight, no alert), so the
++    /// whole window lets clicks through to the game, lock or not.
++    pub autohidden: std::sync::atomic::AtomicBool,
+ }
+ 
+ /// Tell the main window whether to ignore the mouse: when locked, unless the
+@@ -107,7 +110,7 @@ pub struct OverlayLock {
+ fn sync_click_through(app: &tauri::AppHandle, lock: &OverlayLock, over_button: bool) {
+     use std::sync::atomic::Ordering;
+     let mut applied = lock.applied.lock();
+-    let ignore = lock.locked.load(Ordering::SeqCst) && !over_button;
++    let ignore = (lock.locked.load(Ordering::SeqCst) && !over_button) || lock.autohidden.load(Ordering::SeqCst);
+     if *applied == Some(ignore) {
+         return;
+     }
+@@ -152,6 +155,17 @@ fn apply_overlay_lock(app: &tauri::AppHandle, locked: bool) {
+     }
+ }
+ 
++/// Fateweaver (Linux): the meter page reports when it auto-hides or shows again.
++#[tauri::command]
++fn fw_set_autohidden(app: tauri::AppHandle, hidden: bool) {
++    use std::sync::atomic::Ordering;
++    let Some(state) = app.try_state::<AppState>() else { return };
++    let lock = state.overlay_lock.clone();
++    lock.autohidden.store(hidden, Ordering::SeqCst);
++    tracing::info!("fw autohide: {}", if hidden { "hidden" } else { "shown" });
++    sync_click_through(&app, &lock, false);
++}
++
+ // ===== TAURI COMMANDS =====
+ 
+ #[tauri::command]
+@@ -2591,6 +2605,12 @@ pub fn run() {
+             crate::fw_stats::fw_my_stats,
+             crate::fateweaver::fw_open_log_folder,
+             crate::fateweaver::fw_guard_alt,
++            crate::fateweaver::fw_open_corner,
++            crate::fateweaver::fw_corner_size,
++            crate::fateweaver::fw_set_pinned,
++            crate::fateweaver::fw_close_corner,
++            crate::fateweaver::fw_overlay_settings,
++            fw_set_autohidden,
+             get_app_version,
+             get_dps_snapshot,
+             get_skill_details,
+diff --git a/src-tauri/src/fateweaver.rs b/src-tauri/src/fateweaver.rs
+index 4da777d..8906077 100644
+--- a/src-tauri/src/fateweaver.rs
++++ b/src-tauri/src/fateweaver.rs
+@@ -205,6 +205,72 @@ pub fn close_toasts(app: tauri::AppHandle) {
+     }
+ }
+ 
++// ===== Corner button (Linux build) =====
++// A small always-on-top button in the top-left corner of the meter's monitor. It opens a tiny
++// menu: keep the meter shown or let it auto-hide, open the hub, open the meter settings.
++
++const CORNER_BTN: f64 = 34.0; // logical px, collapsed size
++
++#[tauri::command]
++pub async fn fw_open_corner(app: tauri::AppHandle) -> Result<(), String> {
++    if app.get_webview_window("fwcorner").is_some() {
++        return Ok(());
++    }
++    let main = app.get_webview_window("main").ok_or("meter window not found")?;
++    let mon = main.current_monitor().ok().flatten().or_else(|| main.primary_monitor().ok().flatten());
++    let (x, y, scale) = match &mon {
++        Some(m) => (m.position().x as f64, m.position().y as f64, m.scale_factor()),
++        None => (0.0, 0.0, 1.0),
++    };
++    let win = tauri::WebviewWindowBuilder::new(&app, "fwcorner", tauri::WebviewUrl::App("corner.html".into()))
++        .title("Fateweaver menu")
++        .inner_size(CORNER_BTN, CORNER_BTN)
++        .position(x / scale, y / scale)
++        .decorations(false)
++        .transparent(true)
++        .shadow(false)
++        .always_on_top(true)
++        .skip_taskbar(true)
++        .resizable(false)
++        .focused(false)
++        .build()
++        .map_err(|e| e.to_string())?;
++    let _ = win.set_position(tauri::PhysicalPosition::new(x as i32, y as i32));
++    tracing::info!("fw corner button at {x},{y} (scale {scale})");
++    Ok(())
++}
++
++/// The corner page grows into its menu and shrinks back to the button.
++#[tauri::command]
++pub fn fw_corner_size(window: tauri::WebviewWindow, width: f64, height: f64) {
++    let _ = window.set_size(tauri::LogicalSize::new(width, height));
++}
++
++#[tauri::command]
++pub fn fw_close_corner(app: tauri::AppHandle) {
++    if let Some(w) = app.get_webview_window("fwcorner") {
++        let _ = w.close();
++    }
++}
++
++/// The settings window changed the overlay options; hand them to the meter page.
++#[tauri::command]
++pub fn fw_overlay_settings(app: tauri::AppHandle, autohide: bool, linger_sec: u32, corner: bool) {
++    if let Some(main) = app.get_webview_window("main") {
++        let _ = main.eval(&format!(
++            "window.__fwOverlaySettings && window.__fwOverlaySettings({{autohide: {autohide}, lingerSec: {linger_sec}, corner: {corner}}})"
++        ));
++    }
++}
++
++/// Keep the meter shown (true) or let it auto-hide (false).
++#[tauri::command]
++pub fn fw_set_pinned(app: tauri::AppHandle, pinned: bool) {
++    if let Some(main) = app.get_webview_window("main") {
++        let _ = main.eval(&format!("window.__fwSetPinned && window.__fwSetPinned({pinned})"));
++    }
++}
++
+ // ===== Field boss deaths (OI-006) =====
+ // The parser's `42 36 <entity> 0 3` record is a combat death. When the entity is a flagged boss,
+ // data_storage hands its NPC code here; the meter drains the queue and keeps the kill log.

@@ -3,7 +3,7 @@
 # Quellcode-Archiv des offiziellen Releases und ersetzt nur das Windows-Taskleisten-Badge durch ein No-op.
 pkgname=fateweaver
 pkgver=0.1.2
-pkgrel=1
+pkgrel=2
 pkgdesc="Fateweaver: AION 2 Overlay (DPS-Meter, Timer, Feldbosse, Checkliste), inoffizieller Linux-Build"
 arch=('x86_64')
 url="https://github.com/ZekeLabs/fateweaver-releases"
@@ -11,9 +11,11 @@ license=('GPL-3.0-only')
 depends=('webkit2gtk-4.1' 'gtk3' 'libpcap' 'libcap' 'hicolor-icon-theme')
 makedepends=('rust' 'nodejs' 'npm' 'unzip' 'perl')
 install=fateweaver.install
-source=("Fateweaver-source-$pkgver.zip::https://github.com/ZekeLabs/fateweaver-releases/releases/download/v$pkgver/Fateweaver-source.zip")
+source=("Fateweaver-source-$pkgver.zip::https://github.com/ZekeLabs/fateweaver-releases/releases/download/v$pkgver/Fateweaver-source.zip"
+        "0001-overlay-autohide-corner-menu.patch")
 noextract=("Fateweaver-source-$pkgver.zip")
-sha256sums=('0fb646d4dced1e72a1d1567489cc37cffe172e7faca83ed3c0bc609992911801')
+sha256sums=('0fb646d4dced1e72a1d1567489cc37cffe172e7faca83ed3c0bc609992911801'
+            '7dc9e9452e52a6d3aedc87ffe74c80ed25c0ac75308af58fff20f1fdf1d5a550')
 options=('!lto' '!debug')
 
 prepare() {
@@ -23,6 +25,8 @@ prepare() {
   # Windows-Taskleisten-Badge (set_overlay_icon) gibt es unter Linux nicht.
   perl -i -pe 's/\bw\.set_overlay_icon\(.*\)\.map_err/Ok::<(), tauri::Error>(()).map_err/' src-tauri/src/fateweaver.rs
   ! grep -q 'set_overlay_icon' src-tauri/src/fateweaver.rs
+  # Overlay nur im Kampf/bei Hinweisen, Menue-Knopf oben links, Einstellungen > Overlay.
+  patch -p1 --forward < "$srcdir/0001-overlay-autohide-corner-menu.patch"
   # Datendateien, die der public-Ordner braucht (wie im Arch-PKGBUILD von A2Tools).
   mkdir -p public/i18n public/data public/src/data
   cp -r src/data/i18n/* public/i18n/
