@@ -32,6 +32,10 @@ prepare() {
 
 build() {
   cd src-fw
+  # Portabel bauen: CachyOS setzt sonst target-cpu=native, das Paket liefe dann nur auf der Bau-CPU.
+  export RUSTFLAGS="-C opt-level=3 -C target-cpu=x86-64"
+  export CFLAGS="-march=x86-64 -mtune=generic -O2 -pipe -fno-plt"
+  export CXXFLAGS="$CFLAGS"
   npm install --include=dev --no-audit --no-fund
   npx tauri build --no-bundle
 }
